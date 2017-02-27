@@ -164,6 +164,7 @@ int main(int argc, char* argv[])
     //master initializes shared memory variables in shared memory structure; has to be done AFTER shmat
     shm_clock_ptr->seconds = 0;
     shm_clock_ptr->nano_seconds = 0;
+    
     //spawn slave process
     makeSlaveProcesses(maxSlaveProcessesSpawned);
 
