@@ -49,6 +49,11 @@ int main(int argc, char* argv[])
     shm_clock_ptr = shmat(shmid, NULL, 0);
     //attach each process's shared memory pointer to the shared_clock_t struct - - critical
 
+    while(1){
+        printf("slave %d seconds: %d nano_seconds: %d\n", slave_id, shm_clock_ptr->seconds, shm_clock_ptr->nano_seconds);
+        sleep(2); //just for visual help
+    }
+
     //Clean up
     shmdt(shm_clock_ptr);
     int fclose();

@@ -12,7 +12,7 @@
 static int h_flag = 0;
 static int maxSlaveProcessesSpawned = 5; //the x in -s x; user sets a maximum for the number of slave processes spawned with '-s x' flag where x sets maxSlaveProcessesSpawned
 static char* fileName = "log_file.txt"; //the filename in -l filename; declaring char* fileName character pointer as a const string affords us the priviledge of not having to end our string with a NULL terminator '\0'
-static int computationShotClock = 20; //the z in -t z; is the time in seconds when the master will terminate itself and all children
+static int computationShotClock = 60; //the z in -t z; is the time in seconds when the master will terminate itself and all children
 /*getopt() flags:*/
 
 pid_t *slavePointer;
@@ -38,7 +38,7 @@ int detachandremove (int shmid, void* shmaddr){
 void makeSlaveProcesses(int numberOfSlaves)
 {
     char slave_id[3];
-    int i, status;
+    int i;
 
     //Allocate space for slave process array
     slavePointer = (pid_t*) malloc(sizeof(pid_t) * maxSlaveProcessesSpawned);
@@ -60,16 +60,6 @@ void makeSlaveProcesses(int numberOfSlaves)
             perror("Child failed to execl slave exe");
             printf("THIS SHOULD NEVER EXECUTE\n");
         }
-    }
-
-    //All slaves have been forked. Wait calling process waits (blocks/goes to sleep) for them to terminate (or change state i.e., terminate or get interrupted)
-    while(wait(&status) > 0) {
-        if (WIFEXITED(status))	/* process exited normally */
-		printf("slave process exited with value %d\n", WEXITSTATUS(status));
-	else if (WIFSIGNALED(status))	/* child exited on a signal */
-		printf("slave process exited due to signal %d\n", WTERMSIG(status));
-	else if (WIFSTOPPED(status))	/* child was stopped */
-		printf("slave process was stopped by signal %d\n", WIFSTOPPED(status));
     }
 }
 
@@ -164,9 +154,35 @@ int main(int argc, char* argv[])
     //master initializes shared memory variables in shared memory structure; has to be done AFTER shmat
     shm_clock_ptr->seconds = 0;
     shm_clock_ptr->nano_seconds = 0;
-    
+
     //spawn slave process
-    makeSlaveProcesses(maxSlaveProcessesSpawned);
+    makeSlaveProcesses(maxSlaveProcessesSpawned); //fork / execl
+    //master will keep changing the shared memory at the same time the slaves are reading it
+    //infinite loop won't terminate without a signal (wont terminate naturally)
+    while(shm_clock_ptr->seconds <= 2){
+        shm_clock_ptr->nano_seconds += 110000000; //increments the nano_seconds on each iteration
+        if(shm_clock_ptr->nano_seconds > 1000000000){
+            shm_clock_ptr->seconds++;
+            shm_clock_ptr->nano_seconds -= 1000000000;
+        }
+      sleep(3); //just sleep so you can keep track of iterations visually
+    }
+
+    int i, status; //i is for-loop iterator, status is to hold the exit signal after master invokes kill on the infinitely running slave processes
+    for (i = 0; i < maxSlaveProcessesSpawned; i++){
+        kill(slavePointer[i], SIGTERM);
+    }
+
+    while(wait(&status) > 0) { 
+        if (WIFEXITED(status))	/* process exited normally */
+		printf("slave process exited with value %d\n", WEXITSTATUS(status));
+	else if (WIFSIGNALED(status))	/* child exited on a signal */
+		printf("slave process exited due to signal %d\n", WTERMSIG(status));
+	else if (WIFSTOPPED(status))	/* child was stopped */
+		printf("slave process was stopped by signal %d\n", WIFSTOPPED(status));
+    }
+
+    
 
     sleep(10);
     printf("[master]: Done\n");
