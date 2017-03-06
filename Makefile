@@ -2,9 +2,9 @@ CFLAGS=-Wall -g
 
 HEADER=proj3.h
 SOURCE_MAIN=oss.c
-SOURCE_SLAVE=slave.c
+SOURCE_SLAVE=user.c
 OBJECT_MAIN=oss.o
-OBJECT_SLAVE=slave.o
+OBJECT_SLAVE=user.o
 EXE_MAIN=oss
 EXE_SLAVE=user
 

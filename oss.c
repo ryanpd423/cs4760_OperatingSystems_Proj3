@@ -3,16 +3,20 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <sys/wait.h>
+#include <sys/msg.h>
 #include <signal.h>
 #include <sys/shm.h>
 #include <string.h>
 #include "proj3.h"
+
+//Ctrl+` in VisualStudio Code to display the integrated terminal
 
 /*getopt() flags:*/
 static int h_flag = 0;
 static int maxSlaveProcessesSpawned = 5; //the x in -s x; user sets a maximum for the number of slave processes spawned with '-s x' flag where x sets maxSlaveProcessesSpawned
 static char* fileName = "log_file.txt"; //the filename in -l filename; declaring char* fileName character pointer as a const string affords us the priviledge of not having to end our string with a NULL terminator '\0'
 static int computationShotClock = 60; //the z in -t z; is the time in seconds when the master will terminate itself and all children
+static int message_queue_id; 
 /*getopt() flags:*/
 
 pid_t *slavePointer;
@@ -86,9 +90,26 @@ void signalCallback (int signum)
     }
 
     //clean up program before exit (via interrupt signal)
-    detachandremove(shmid,shm_clock_ptr);
-    free(slavePointer);
+    detachandremove(shmid,shm_clock_ptr); //cleans up shared memory IPC
+    msgctl(message_queue_id, IPC_RMID, NULL); //cleans up message queue IPC
+    free(slavePointer); 
     exit(0);
+}
+
+void mail_the_message(int destination_address){
+    static int size_of_message;
+    message_t message;
+    message.message_address = destination_address;
+    //specifies the number of bytes in the message contents, not counting the address variable size
+    size_of_message = sizeof(message) - sizeof(message.message_address);
+    msgsnd(message_queue_id, &message, size_of_message, 0);
+}
+
+void receive_the_message(int destination_address){
+    static int size_of_message;
+    message_t message;
+    size_of_message = sizeof(message) - sizeof(long);
+    msgrcv(message_queue_id, &message, size_of_message, destination_address, 0);
 }
 
 int main(int argc, char* argv[])
@@ -148,6 +169,12 @@ int main(int argc, char* argv[])
         exit(errno);
     }
 
+    //master process creates a message queue; it returns a queue_id which you can use to access the message queue
+    if ((message_queue_id = msgget(MESSAGE_QUEUE_KEY, IPC_CREAT | 0600)) < 0) {
+        perror("Error: mssget");
+        exit(errno);
+    }
+
     //attach shared memory pointer to shared_clock_t struct; we've initialized our 
     shm_clock_ptr = shmat(shmid, NULL, 0);
 
@@ -156,16 +183,22 @@ int main(int argc, char* argv[])
     shm_clock_ptr->nano_seconds = 0;
 
     //spawn slave process
-    makeSlaveProcesses(maxSlaveProcessesSpawned); //fork / execl
+    makeSlaveProcesses(maxSlaveProcessesSpawned); //fork / execli
     //master will keep changing the shared memory at the same time the slaves are reading it
     //infinite loop won't terminate without a signal (wont terminate naturally)
     while(shm_clock_ptr->seconds <= 2){
+        int i;
+        for(i = 1; i <= maxSlaveProcessesSpawned; i++){
+            mail_the_message(i);
+
         shm_clock_ptr->nano_seconds += 110000000; //increments the nano_seconds on each iteration
         if(shm_clock_ptr->nano_seconds > 1000000000){
             shm_clock_ptr->seconds++;
             shm_clock_ptr->nano_seconds -= 1000000000;
         }
-      sleep(3); //just sleep so you can keep track of iterations visually
+            receive_the_message(400);
+        }
+      //sleep(3); //just sleep so you can keep track of iterations visually
     }
 
     int i, status; //i is for-loop iterator, status is to hold the exit signal after master invokes kill on the infinitely running slave processes
@@ -188,7 +221,8 @@ int main(int argc, char* argv[])
     printf("[master]: Done\n");
 
     //Cleanup
-    detachandremove(shmid,shm_clock_ptr);
+    detachandremove(shmid,shm_clock_ptr); 
+    msgctl(message_queue_id, IPC_RMID, NULL);
     free(slavePointer);
     return 0;
 }
