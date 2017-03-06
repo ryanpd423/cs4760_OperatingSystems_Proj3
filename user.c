@@ -82,27 +82,28 @@ int main(int argc, char* argv[])
     //attach each process's shared memory pointer to the shared_clock_t struct - - critical
 
     srand(time(NULL));
-    int run_time_limit; //this represents how long the child should run
+    unsigned long long run_time_limit; //this represents how long the child should run
     run_time_limit = (rand() % 100000) +1;
-    printf("random time = %d\n", run_time_limit);
-    
+    //put run_time_limit in terms of entrance, exit, and critical sections times:
+    unsigned long long scaled_run_time_limit = run_time_limit * 1000;
+    printf("unscaled random time limit = %llu\n", run_time_limit);
     unsigned long long time_in_critical_section = 0;
     while(1){
         receive_the_message(slave_id);
         unsigned long long entrance_time = (shm_clock_ptr->seconds * 1000000000) + shm_clock_ptr->nano_seconds;
         int process_state = 1; //process still has time to run basically
         mail_the_message(400, process_state);
-    
         printf("entrance time = %llu\n", entrance_time);
         printf("slave %d seconds: %d nano_seconds: %d\n", slave_id, shm_clock_ptr->seconds, shm_clock_ptr->nano_seconds);
         receive_the_message(slave_id);
         unsigned long long exit_time = (shm_clock_ptr->seconds * 1000000000) + shm_clock_ptr->nano_seconds;
+        
         printf("exit time = %llu\n", exit_time);
         time_in_critical_section += (exit_time - entrance_time);
         printf("critical section time = %llu\n", time_in_critical_section);
-        if (time_in_critical_section > run_time_limit) {
+        printf("scaled_run_time_limit = %llu\n", scaled_run_time_limit);
+        if (time_in_critical_section > scaled_run_time_limit) {
             process_state = 0; //if 0 then the process ran out of time
-            
         }
         else 
             process_state = 1; //if 1 then the process finished with time to spare
