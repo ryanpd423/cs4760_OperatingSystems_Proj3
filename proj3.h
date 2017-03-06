@@ -10,5 +10,6 @@ typedef struct shared_clock {
 //message queue implementation
 typedef struct message {
     long message_address; //process id of the receiving process
-    //shared_clock_t clock_info;
+    int dead_or_done; //process id has terminated or finished running, whichever comes first
+    shared_clock_t clock_info;
 } message_t;

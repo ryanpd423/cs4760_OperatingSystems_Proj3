@@ -25,6 +25,7 @@ shared_clock_t* shm_clock_ptr; //pointer to starting address in shared memory of
 static int message_queue_id;
 
 
+
 //slave.c signal handler for slave processes
 void signalCallback (int signum)
 {
@@ -35,10 +36,13 @@ void signalCallback (int signum)
     exit(0);
 }
 
-void mail_the_message(int destination_address){
+void mail_the_message(int destination_address, int user_process_state){
     static int size_of_message;
     message_t message;
     message.message_address = destination_address;
+    message.dead_or_done = user_process_state;
+    message.clock_info.seconds = shm_clock_ptr->seconds;
+    message.clock_info.nano_seconds = shm_clock_ptr->nano_seconds;
     //specifies the number of bytes in the message contents, not counting the address variable size
     size_of_message = sizeof(message) - sizeof(long);
     msgsnd(message_queue_id, &message, size_of_message, 0);
@@ -77,11 +81,33 @@ int main(int argc, char* argv[])
     shm_clock_ptr = shmat(shmid, NULL, 0);
     //attach each process's shared memory pointer to the shared_clock_t struct - - critical
 
+    srand(time(NULL));
+    int run_time_limit; //this represents how long the child should run
+    run_time_limit = (rand() % 100000) +1;
+    printf("random time = %d\n", run_time_limit);
+    
+    unsigned long long time_in_critical_section = 0;
     while(1){
         receive_the_message(slave_id);
+        unsigned long long entrance_time = (shm_clock_ptr->seconds * 1000000000) + shm_clock_ptr->nano_seconds;
+        int process_state = 1; //process still has time to run basically
+        mail_the_message(400, process_state);
+    
+        printf("entrance time = %llu\n", entrance_time);
         printf("slave %d seconds: %d nano_seconds: %d\n", slave_id, shm_clock_ptr->seconds, shm_clock_ptr->nano_seconds);
-        sleep(2); //just for visual help
-        mail_the_message(400);
+        receive_the_message(slave_id);
+        unsigned long long exit_time = (shm_clock_ptr->seconds * 1000000000) + shm_clock_ptr->nano_seconds;
+        printf("exit time = %llu\n", exit_time);
+        time_in_critical_section += (exit_time - entrance_time);
+        printf("critical section time = %llu\n", time_in_critical_section);
+        if (time_in_critical_section > run_time_limit) {
+            process_state = 0; //if 0 then the process ran out of time
+            
+        }
+        else 
+            process_state = 1; //if 1 then the process finished with time to spare
+        //sleep(2); //just for visual help
+        mail_the_message(400, process_state);
     }
 
     //Clean up

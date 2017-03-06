@@ -110,6 +110,11 @@ void receive_the_message(int destination_address){
     message_t message;
     size_of_message = sizeof(message) - sizeof(long);
     msgrcv(message_queue_id, &message, size_of_message, destination_address, 0);
+
+    if(!message.dead_or_done){
+        // print to file, kill(pid[slave_id]), pid[slave_id] = fork(), execl
+        printf("Master: Child is terminating at time [ENTER THIS LATER]\n");
+    }
 }
 
 int main(int argc, char* argv[])
@@ -190,13 +195,16 @@ int main(int argc, char* argv[])
         int i;
         for(i = 1; i <= maxSlaveProcessesSpawned; i++){
             mail_the_message(i);
+            receive_the_message(400);
 
-        shm_clock_ptr->nano_seconds += 110000000; //increments the nano_seconds on each iteration
+        shm_clock_ptr->nano_seconds += 11000; //increments the nano_seconds on each iteration
         if(shm_clock_ptr->nano_seconds > 1000000000){
             shm_clock_ptr->seconds++;
             shm_clock_ptr->nano_seconds -= 1000000000;
         }
+            mail_the_message(i);
             receive_the_message(400);
+            //sleep(1);
         }
       //sleep(3); //just sleep so you can keep track of iterations visually
     }
