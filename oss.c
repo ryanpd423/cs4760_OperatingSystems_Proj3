@@ -11,15 +11,21 @@
 
 //Ctrl+` in VisualStudio Code to display the integrated terminal
 
+
 /*getopt() flags:*/
 static int h_flag = 0;
 static int maxSlaveProcessesSpawned = 5; //the x in -s x; user sets a maximum for the number of slave processes spawned with '-s x' flag where x sets maxSlaveProcessesSpawned
 static char* fileName = "log_file.txt"; //the filename in -l filename; declaring char* fileName character pointer as a const string affords us the priviledge of not having to end our string with a NULL terminator '\0'
 static int computationShotClock = 60; //the z in -t z; is the time in seconds when the master will terminate itself and all children
 static int message_queue_id; 
+int next_logical_process;
+//int active_users_logical_id[101]; //0 or 1; 0 = not active; 1 = active (active = valid slave_id); has a valid pid in active system
+//pid_t actual_process_id[101]; //the literal slave_id (actual_process_id[i] of a slave, assuming its corresponding active_users_logical_id[i] == 1; which means that it is active)
 /*getopt() flags:*/
 
-pid_t *slavePointer;
+
+//implementing a new way to track our pids/slaves
+process_t *slavePointer;
 
 int shmid; //holds the shared memory segment id #global
 shared_clock_t* shm_clock_ptr; //pointer to starting address in shared memory of the shared memory structure (see .h)
@@ -45,21 +51,23 @@ void makeSlaveProcesses(int numberOfSlaves)
     int i;
 
     //Allocate space for slave process array
-    slavePointer = (pid_t*) malloc(sizeof(pid_t) * maxSlaveProcessesSpawned);
+    slavePointer = (process_t*) malloc(sizeof(process_t) * maxSlaveProcessesSpawned);
 
     // Fork loop
     for (i = 0; i < numberOfSlaves; i++)
-    {
-        slavePointer[i] = fork();
+    {        
+        slavePointer[i].logical = i + 1;
 
-        if (slavePointer[i] < 0) {
+        slavePointer[i].literal = fork();
+
+        if (slavePointer[i].literal < 0) {
             //fork failed
             perror("Fork failed");
             exit(errno);
         }
-        else if (slavePointer[i] == 0) {
+        else if (slavePointer[i].literal == 0) {
             //slave (child) process code - - remember that fork() returns twice...
-            sprintf(slave_id, "%d", i + 1);
+            sprintf(slave_id, "%d", slavePointer[i].logical);
             execl("./user", "user", slave_id, NULL); //replaces the memory copied to each process after fork to start over with nothing
             perror("Child failed to execl slave exe");
             printf("THIS SHOULD NEVER EXECUTE\n");
@@ -78,7 +86,7 @@ void signalCallback (int signum)
         printf("\nSIGALRM received by master\n");
 
    for (i = 0; i < maxSlaveProcessesSpawned; i++){
-        kill(slavePointer[i], SIGTERM);
+        kill(slavePointer[i].literal, SIGTERM);
     }
     while(wait(&status) > 0) { 
         if (WIFEXITED(status))	/* process exited normally */
@@ -106,14 +114,42 @@ void mail_the_message(int destination_address){
 }
 
 void receive_the_message(int destination_address){
+    char slave_id[3];
     static int size_of_message;
+    //int process_that_terminated;
     message_t message;
     size_of_message = sizeof(message) - sizeof(long);
     msgrcv(message_queue_id, &message, size_of_message, destination_address, 0);
-
+    //sleep(1); //delete this eventually - - just for studying stdout
     if(!message.dead_or_done){
         // print to file, kill(pid[slave_id]), pid[slave_id] = fork(), execl
-        printf("Master: Child is terminating at time [ENTER THIS LATER]\n");
+        printf("Master: Child %d is terminating at my time: [shm_clock_ptr->seconds] [shm_clock_ptr->nano_seconds] because it reached [message.clock_info.seconds] [message.clock_info.nano_seconds] \n", message.sender);
+        int j;
+        int index = -1;
+        for (j = 0; j < maxSlaveProcessesSpawned; j++){
+            if (slavePointer[j].logical == message.sender) {
+                index = j; 
+                break;    
+            }
+        }
+        kill(slavePointer[index].literal, SIGINT);
+        printf("kill() cmd runs from RECEIVE()\n");
+        slavePointer[index].logical = next_logical_process++;
+        slavePointer[index].literal = fork();
+        printf("new replacement slave process #%d from RECEIVE()\n", slavePointer[index].logical);
+        if (slavePointer[index].literal < 0) {
+        //fork failed
+        perror("Fork failed");
+        exit(errno);
+        }
+        else if (slavePointer[index].literal == 0) {
+            //slave (child) process code - - remember that fork() returns twice...
+            sprintf(slave_id, "%d", slavePointer[index].logical);
+            execl("./user", "user", slave_id, NULL); //replaces the memory copied to each process after fork to start over with nothing
+            perror("Child failed to execl slave exe");
+            printf("THIS SHOULD NEVER EXECUTE\n");
+        }
+
     }
 }
 
@@ -145,6 +181,9 @@ int main(int argc, char* argv[])
         }
     }
 
+    //update next_logical_process
+    next_logical_process = maxSlaveProcessesSpawned + 1;
+
     if (h_flag == 1)
     {
         printf("'-h' flag: This provides a help menu\n");
@@ -153,6 +192,9 @@ int main(int argc, char* argv[])
         printf("'-t z' flag: This flag determines the amount time that will pass until the master process terminates itself (default value = %d). Current value of the timer variable = %d\n", computationShotClock, computationShotClock );
         exit(0);
     }
+
+    //info for your receive method
+    next_logical_process = maxSlaveProcessesSpawned + 1;
 
     //generate SIGINT via Ctrl+c
     if (signal(SIGINT, signalCallback) == SIG_ERR) {
@@ -193,8 +235,8 @@ int main(int argc, char* argv[])
     //infinite loop won't terminate without a signal (wont terminate naturally)
     while(shm_clock_ptr->seconds <= 2){
         int i;
-        for(i = 1; i <= maxSlaveProcessesSpawned; i++){
-            mail_the_message(i);
+        for(i = 0; i < maxSlaveProcessesSpawned; i++){
+            mail_the_message(slavePointer[i].logical);
             receive_the_message(400);
 
         shm_clock_ptr->nano_seconds += 11000; //increments the nano_seconds on each iteration
@@ -202,7 +244,7 @@ int main(int argc, char* argv[])
             shm_clock_ptr->seconds++;
             shm_clock_ptr->nano_seconds -= 1000000000;
         }
-            mail_the_message(i);
+            mail_the_message(slavePointer[i].logical);
             receive_the_message(400);
             //sleep(1);
         }
@@ -211,7 +253,7 @@ int main(int argc, char* argv[])
 
     int i, status; //i is for-loop iterator, status is to hold the exit signal after master invokes kill on the infinitely running slave processes
     for (i = 0; i < maxSlaveProcessesSpawned; i++){
-        kill(slavePointer[i], SIGTERM);
+        kill(slavePointer[i].literal, SIGTERM);
     }
 
     while(wait(&status) > 0) { 
@@ -222,8 +264,6 @@ int main(int argc, char* argv[])
 	else if (WIFSTOPPED(status))	/* child was stopped */
 		printf("slave process was stopped by signal %d\n", WIFSTOPPED(status));
     }
-
-    
 
     sleep(10);
     printf("[master]: Done\n");

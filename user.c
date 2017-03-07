@@ -41,6 +41,7 @@ void mail_the_message(int destination_address, int user_process_state){
     message_t message;
     message.message_address = destination_address;
     message.dead_or_done = user_process_state;
+    message.sender = slave_id; //initializes the message.sender member so the master can decide who the message is from
     message.clock_info.seconds = shm_clock_ptr->seconds;
     message.clock_info.nano_seconds = shm_clock_ptr->nano_seconds;
     //specifies the number of bytes in the message contents, not counting the address variable size
@@ -89,19 +90,30 @@ int main(int argc, char* argv[])
     printf("unscaled random time limit = %llu\n", run_time_limit);
     unsigned long long time_in_critical_section = 0;
     while(1){
-        receive_the_message(slave_id);
+        receive_the_message(slave_id); //RECEIVE message from master
+
         unsigned long long entrance_time = (shm_clock_ptr->seconds * 1000000000) + shm_clock_ptr->nano_seconds;
+
         int process_state = 1; //process still has time to run basically
-        mail_the_message(400, process_state);
-        printf("entrance time = %llu\n", entrance_time);
+
+        mail_the_message(400, process_state); //SEND message to master
+
+        //printf("entrance time = %llu\n", entrance_time);
+
         printf("slave %d seconds: %d nano_seconds: %d\n", slave_id, shm_clock_ptr->seconds, shm_clock_ptr->nano_seconds);
-        receive_the_message(slave_id);
+
+        receive_the_message(slave_id); //RECEIVE message from master
+
         unsigned long long exit_time = (shm_clock_ptr->seconds * 1000000000) + shm_clock_ptr->nano_seconds;
         
-        printf("exit time = %llu\n", exit_time);
+        //printf("exit time = %llu\n", exit_time);
+
         time_in_critical_section += (exit_time - entrance_time);
-        printf("critical section time = %llu\n", time_in_critical_section);
-        printf("scaled_run_time_limit = %llu\n", scaled_run_time_limit);
+
+        //printf("critical section time = %llu\n", time_in_critical_section);
+
+        //printf("scaled_run_time_limit = %llu\n", scaled_run_time_limit);
+
         if (time_in_critical_section > scaled_run_time_limit) {
             process_state = 0; //if 0 then the process ran out of time
         }
