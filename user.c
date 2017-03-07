@@ -41,7 +41,7 @@ void mail_the_message(int destination_address, int user_process_state){
     message_t message;
     message.message_address = destination_address;
     message.dead_or_done = user_process_state;
-    message.sender = slave_id; //initializes the message.sender member so the master can decide who the message is from
+    message.return_address = slave_id; //initializes the message.return_address member so the master can decide who the message is from
     message.clock_info.seconds = shm_clock_ptr->seconds;
     message.clock_info.nano_seconds = shm_clock_ptr->nano_seconds;
     //specifies the number of bytes in the message contents, not counting the address variable size
@@ -87,7 +87,7 @@ int main(int argc, char* argv[])
     run_time_limit = (rand() % 100000) +1;
     //put run_time_limit in terms of entrance, exit, and critical sections times:
     unsigned long long scaled_run_time_limit = run_time_limit * 1000;
-    printf("unscaled random time limit = %llu\n", run_time_limit);
+    //printf("unscaled random time limit = %llu\n", run_time_limit);
     unsigned long long time_in_critical_section = 0;
     while(1){
         receive_the_message(slave_id); //RECEIVE message from master
